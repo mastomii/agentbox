@@ -1,0 +1,27 @@
+services:
+  agentbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentbox:latest
+    container_name: agentbox
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Required. See .env.example for how to obtain these.
+      CF_API_TOKEN: ${CF_API_TOKEN:?set CF_API_TOKEN in your .env}
+      AGENTBOX_SECRET: ${AGENTBOX_SECRET:?set AGENTBOX_SECRET in your .env (openssl rand -hex 32)}
+      NODE_ENV: production
+    env_file:
+      - .env
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

@@ -1,0 +1,175 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   Theme palette mirrors refs/agentbox (near-black darks,
+   #0066ff blue, emerald active accents, slate light mode).
+   ============================================================ */
+:root {
+  --radius: 0.75rem;
+  /* App bg slate-100 / workspace white / cards slate-50 (distinct) */
+  --background: #eef2f6;
+  --workspace: #ffffff;
+  --foreground: #1e293b;
+  --card: #f8fafc;
+  --card-foreground: #1e293b;
+  --popover: #ffffff;
+  --popover-foreground: #1e293b;
+  /* Primary blue-600 */
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2f7;
+  --secondary-foreground: #1e293b;
+  --muted: #eef2f7;
+  --muted-foreground: #64748b; /* slate-500 */
+  /* Accent = blue-50 selection / hover */
+  --accent: #eff6ff;
+  --accent-foreground: #1d4ed8;
+  --destructive: #dc2626;
+  --success: #16a34a;
+  --warning: #ea8c00;
+  --border: #d3dae3;
+  --input: #d3dae3;
+  --ring: #2563eb;
+  --sidebar: #f8fafc; /* slate-50 */
+  --sidebar-foreground: #1e293b;
+  --sidebar-primary: #2563eb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #1e293b;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #2563eb;
+}
+
+.dark {
+  /* App bg #050508 / workspace #0c0d12 / cards #111319 (distinct) */
+  --background: #050508;
+  --workspace: #0c0d12;
+  --foreground: #ffffff;
+  --card: #111319;
+  --card-foreground: #ffffff;
+  --popover: #0c0e13;
+  --popover-foreground: #ffffff;
+  /* Primary #0066ff */
+  --primary: #0066ff;
+  --primary-foreground: #ffffff;
+  --secondary: #181b24;
+  --secondary-foreground: #ffffff;
+  --muted: #15171f; /* subtle lift off card, skeleton tone */
+  --muted-foreground: #94a3b8; /* slate-400 */
+  /* Accent = selected/hover surface (clearly lifted off the card) */
+  --accent: #1e222d;
+  --accent-foreground: #ffffff;
+  --destructive: #f43f5e; /* rose-500 */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --border: #262a36;
+  --input: #262a36;
+  --ring: #0066ff;
+  --sidebar: #090a0f;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #0066ff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #15171e;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #141721;
+  --sidebar-ring: #0066ff;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-workspace: var(--workspace);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  /* Tailwind v4 ships cursor:default on buttons — restore the pointer for
+     anything interactive (but never for disabled controls). */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href],
+  label[for],
+  summary,
+  select:not(:disabled),
+  [role="tab"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  ::selection {
+    @apply bg-primary/20;
+  }
+  /* Thin, theme-aware scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklch, var(--muted-foreground) 30%, transparent);
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--muted-foreground) 50%, transparent);
+  }
+}
+
+@layer components {
+  /* Brand gradient mark — royal blue, matches refs #0066ff */
+  .brand-gradient {
+    background-image: linear-gradient(135deg, #3b82f6 0%, #0066ff 100%);
+    color: #fff;
+  }
+  .dark .brand-gradient {
+    background-image: linear-gradient(135deg, #0066ff 0%, #1d4ed8 100%);
+  }
+  /* Sidebar nav active pill — neutral surface, no colored accent */
+  .nav-active {
+    background-color: var(--accent);
+    color: var(--foreground);
+    font-weight: 600;
+  }
+}

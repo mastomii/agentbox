@@ -1,0 +1,32 @@
+# deps & build output (reinstalled/rebuilt inside the image)
+node_modules
+.next
+out
+build
+
+# env & secrets — never bake into the image
+.env
+.env.*
+!.env.example
+
+# vcs / editor / os
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+
+# docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# tooling & local artifacts
+.playwright-mcp
+*.log
+*.png
+!public/*.png
+README.md
+LICENSE
+npm-debug.log*
