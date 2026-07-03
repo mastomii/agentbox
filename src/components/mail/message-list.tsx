@@ -98,14 +98,14 @@ export function MessageList({
   }
 
   return (
-    <div className="flex w-full flex-col bg-sidebar/40">
+    <div className="flex min-h-0 w-full min-w-0 flex-col overflow-hidden bg-sidebar/40">
       {/* header */}
       {selectMode ? (
-        <div className="flex h-16 items-center gap-2 border-b px-3 sm:px-4">
+        <div className="flex h-16 shrink-0 items-center gap-2 overflow-hidden border-b px-3 sm:px-4">
           <Button variant="ghost" size="icon" className="shrink-0" onClick={exitSelect} aria-label="Cancel">
             <X className="h-4 w-4" />
           </Button>
-          <span className="flex-1 text-sm font-medium">{selected.size} selected</span>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">{selected.size} selected</span>
           <Button variant="ghost" size="icon" disabled={!selected.size || !!busy} onClick={doMarkRead} aria-label="Mark read">
             {busy === "read" ? <Loader2 className="h-4 w-4 animate-spin" /> : <MailCheck className="h-4 w-4" />}
           </Button>
@@ -114,14 +114,14 @@ export function MessageList({
           </Button>
         </div>
       ) : (
-        <div className="flex flex-col gap-2 border-b p-4">
-          <button onClick={onBack} className="mb-1 flex items-center gap-1.5 self-start rounded-lg border px-2.5 py-1 text-muted-foreground hover:bg-accent">
+        <div className="shrink-0 overflow-hidden border-b p-4">
+          <button onClick={onBack} className="mb-3 flex max-w-full items-center gap-1.5 self-start rounded-lg border px-2.5 py-1 text-muted-foreground hover:bg-accent">
             <ChevronLeft className="h-4 w-4" />
             <span className="text-xs font-bold uppercase">Inboxes</span>
           </button>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Messages</span>
-            <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <span className="min-w-0 truncate text-xs font-bold uppercase tracking-wider text-slate-500">Messages</span>
+            <div className="flex shrink-0 items-center gap-1.5">
               {unread > 0 && (
                 <span className="mr-1 rounded-full bg-primary px-1.5 text-xs font-semibold leading-4 text-primary-foreground">{unread}</span>
               )}
@@ -133,7 +133,7 @@ export function MessageList({
               </button>
             </div>
           </div>
-          <div className="flex items-center justify-between rounded-md border bg-secondary p-2.5">
+          <div className="mt-2 flex min-w-0 items-center justify-between overflow-hidden rounded-md border bg-secondary p-2.5">
             <span className="select-all truncate font-mono text-xs text-muted-foreground">{inbox.address}</span>
             <button onClick={() => { navigator.clipboard.writeText(inbox.address); toast.success("Copied"); }} className="ml-1.5 shrink-0 text-muted-foreground hover:text-foreground" aria-label="Copy address">
               <Copy className="h-3.5 w-3.5" />
@@ -150,7 +150,7 @@ export function MessageList({
         </div>
       )}
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1 overflow-hidden">
         {loading && messages.length === 0 ? (
           <div className="space-y-2 p-3">
             {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-md" />)}
@@ -174,32 +174,32 @@ export function MessageList({
                   onClick={() => (selectMode ? toggle(m.id) : onSelect(m.id))}
                   style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}
                   className={cn(
-                    "group/row relative flex w-full items-start gap-3 overflow-hidden rounded-lg border bg-muted p-4 text-left transition-all animate-in fade-in slide-in-from-left-2 duration-300 fill-mode-both",
+                    "group/row relative grid w-full min-w-0 grid-cols-[minmax(0,1fr)] items-start overflow-hidden rounded-lg border bg-muted p-4 text-left transition-all animate-in fade-in slide-in-from-left-2 duration-300 fill-mode-both",
                     isSel ? "border-primary bg-primary/10" : isActive ? "border-border bg-accent" : "border-border/60 hover:border-border hover:bg-accent/60"
                   )}
                 >
                   {selectMode ? (
                     <Checkbox checked={isSel} className="pointer-events-none mt-1 shrink-0" />
                   ) : null}
-                  <div className={cn("min-w-0 flex-1", !selectMode && "group-hover/row:pr-7")}>
+                  <div className={cn("min-w-0 overflow-hidden", !selectMode && "group-hover/row:pr-7")}>
                     {!selectMode && (
-                      <div className="mb-2 flex items-start justify-between gap-2">
-                        <div className="flex min-w-0 items-center gap-2.5">
+                      <div className="mb-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 overflow-hidden">
+                        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2.5 overflow-hidden">
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border bg-secondary text-xs font-bold">
                             {initials(m.from_name, m.from_addr)}
                           </div>
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1 overflow-hidden">
                             <h4 className="truncate text-sm font-bold leading-tight">{m.from_name || m.from_addr || "Unknown"}</h4>
                             <p className="mt-0.5 truncate font-mono text-xs leading-none text-muted-foreground">{m.from_addr}</p>
                           </div>
                         </div>
-                        <span className="shrink-0 text-xs font-medium text-muted-foreground">{timeAgo(m.received_at)}</span>
+                        <span className="max-w-16 truncate text-xs font-medium text-muted-foreground">{timeAgo(m.received_at)}</span>
                       </div>
                     )}
                     <h5 className={cn("mb-1 truncate text-sm font-bold tracking-tight", isActive ? "text-primary" : !m.seen ? "text-foreground" : "text-muted-foreground")}>
                       {m.subject || "(no subject)"}
                     </h5>
-                    <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{m.preview}</p>
+                    <p className="line-clamp-2 overflow-hidden break-all text-xs leading-relaxed text-muted-foreground">{m.preview}</p>
                   </div>
                   {!selectMode && isActive && <span className="absolute bottom-4 right-4 h-1.5 w-1.5 rounded-full bg-[#0066ff] shadow-md" />}
                   {!selectMode && !m.seen && !isActive && <span className="absolute bottom-4 right-4 h-1.5 w-1.5 rounded-full bg-primary" />}
