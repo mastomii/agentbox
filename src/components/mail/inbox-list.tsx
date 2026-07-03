@@ -64,17 +64,17 @@ export function InboxList({
   const totalUnread = inboxes.reduce((n, i) => n + (i.unread || 0), 0);
 
   return (
-    <div className="flex h-full w-full flex-col bg-sidebar">
-      <div className="flex h-16 items-center justify-between border-b px-4">
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-wide">Inboxes</h2>
-          <p className="text-xs font-medium text-muted-foreground">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-sidebar">
+      <div className="flex h-16 shrink-0 items-center justify-between gap-3 border-b px-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-bold uppercase tracking-wide">Inboxes</h2>
+          <p className="truncate text-xs font-medium text-muted-foreground">
             {inboxes.length} active{totalUnread > 0 && <> · <span className="text-primary">{totalUnread} unread</span></>}
           </p>
         </div>
         <Dialog open={open} onOpenChange={(o) => { if (!creating) { setOpen(o); if (o && !domain) setDomain(domains[0] || ""); } }}>
           <DialogTrigger asChild>
-            <Button size="sm" disabled={!configured} className="rounded-lg font-bold shadow-md shadow-blue-500/10">
+            <Button size="sm" disabled={!configured} className="shrink-0 rounded-lg font-bold shadow-md shadow-blue-500/10">
               <Plus className="mr-1 h-4 w-4" /> New
             </Button>
           </DialogTrigger>
@@ -134,7 +134,7 @@ export function InboxList({
         </div>
       )}
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1 overflow-hidden">
         <div className="space-y-1 p-2">
           {loading ? (
             Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-md" />)
@@ -147,12 +147,14 @@ export function InboxList({
             inboxes.map((inbox, i) => {
               const isActive = active?.id === inbox.id;
               return (
-              <button
+              <div
                 key={inbox.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelect(inbox)}
                 style={{ animationDelay: `${i * 35}ms` }}
                 className={cn(
-                  "group flex w-full items-center gap-3 rounded-md border bg-muted px-3 py-3 text-left transition-all animate-in fade-in slide-in-from-left-2 duration-300 fill-mode-both",
+                  "group grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 overflow-hidden rounded-md border bg-muted px-3 py-3 text-left transition-all animate-in fade-in slide-in-from-left-2 duration-300 fill-mode-both",
                   isActive ? "border-border bg-accent" : "border-border/60 hover:border-border hover:bg-accent/60"
                 )}
               >
@@ -162,20 +164,20 @@ export function InboxList({
                 )}>
                   <InboxIcon className="h-[18px] w-[18px]" />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className={cn("truncate text-sm font-semibold", inbox.unread && "font-bold")}>
+                <div className="min-w-0 overflow-hidden">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <span className={cn("block max-w-full truncate text-sm font-semibold", inbox.unread && "font-bold")}>
                       {inbox.label || inbox.address.split("@")[0]}
                     </span>
                   </div>
-                  <div className="truncate font-mono text-xs text-muted-foreground">{inbox.address}</div>
+                  <div className="max-w-full truncate font-mono text-xs text-muted-foreground">{inbox.address}</div>
                 </div>
                 {inbox.unread ? (
-                  <span className="shrink-0 rounded-full bg-primary px-1.5 text-xs font-semibold leading-5 text-primary-foreground">
+                  <span className="max-w-12 truncate rounded-full bg-primary px-1.5 text-xs font-semibold leading-5 text-primary-foreground">
                     {inbox.unread}
                   </span>
                 ) : inbox.last_message_at ? (
-                  <span className="shrink-0 text-xs font-medium text-muted-foreground">{timeAgo(inbox.last_message_at)}</span>
+                  <span className="max-w-16 truncate text-xs font-medium text-muted-foreground">{timeAgo(inbox.last_message_at)}</span>
                 ) : null}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -183,7 +185,7 @@ export function InboxList({
                       role="button"
                       tabIndex={0}
                       onClick={(e) => e.stopPropagation()}
-                      className="rounded p-1 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+                      className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
                     >
                       <MoreVertical className="h-4 w-4" />
                     </span>
@@ -197,7 +199,7 @@ export function InboxList({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              </button>
+              </div>
               );
             })
           )}
@@ -212,7 +214,7 @@ export function InboxList({
               <AlertTriangle className="h-5 w-5 text-destructive" /> Delete inbox
             </DialogTitle>
             <DialogDescription>
-              This permanently deletes <span className="font-mono text-foreground">{delTarget?.address}</span> and{" "}
+              This permanently deletes <span className="break-all font-mono text-foreground">{delTarget?.address}</span> and{" "}
               <b>all of its messages</b>. New mail to this address will no longer be stored. This cannot be undone.
             </DialogDescription>
           </DialogHeader>

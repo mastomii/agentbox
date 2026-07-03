@@ -177,14 +177,14 @@ export function MailClient() {
   const inboxOpen = activeInbox != null;
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full min-h-0 min-w-0 overflow-hidden">
       {/* Left column: inbox list when browsing, message list when an inbox is open. */}
       <div className={cn(
         "h-full w-full min-w-0 shrink-0 overflow-hidden lg:flex lg:w-96 lg:border-r",
         pane === "message" ? "hidden" : "flex"
       )}>
         {inboxOpen ? (
-          <div key={activeInbox.id} className="flex h-full w-full animate-in fade-in slide-in-from-left-4 duration-300">
+          <div key={activeInbox.id} className="flex h-full min-h-0 w-full min-w-0 animate-in fade-in slide-in-from-left-4 duration-300">
             <MessageList
               inbox={activeInbox}
               messages={messages}
@@ -198,7 +198,7 @@ export function MailClient() {
             />
           </div>
         ) : (
-          <div className="flex h-full w-full animate-in fade-in slide-in-from-left-4 duration-300">
+          <div className="flex h-full min-h-0 w-full min-w-0 animate-in fade-in slide-in-from-left-4 duration-300">
             <InboxList
               inboxes={visibleInboxes}
               active={activeInbox}
