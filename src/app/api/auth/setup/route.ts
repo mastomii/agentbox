@@ -3,8 +3,8 @@ import { createSession, createUser, hasAnyUser } from "@/lib/auth";
 import { hasToken, ensureDatabaseId, migrate } from "@/lib/d1";
 
 export async function GET() {
-  // needsSetup also surfaces whether the CF token env var is present.
-  return NextResponse.json({ needsSetup: !(await hasAnyUser()), hasToken: hasToken() });
+  // The login UI only needs to know whether the first account exists.
+  return NextResponse.json({ needsSetup: !(await hasAnyUser()) });
 }
 
 export async function POST(req: Request) {
