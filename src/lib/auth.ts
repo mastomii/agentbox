@@ -24,17 +24,32 @@ export function authSecret(): Uint8Array {
 }
 
 export type SessionUser = { email: string };
-type UserRecord = { email: string; passwordHash: string; createdAt: number };
+type UserRecord = { email: string; passwordHash: string; createdAt: number; sessionVersion: number };
+
+// Bump a user's session_version. Every outstanding JWT carries the version it
+// was minted with; once the DB version moves past it, getSession() rejects the
+// token. This is the server-side kill switch for password changes, account
+// reset, and factory reset — none of which used to invalidate live sessions.
+export async function bumpSessionVersion(email: string): Promise<void> {
+  await run("UPDATE users SET session_version = session_version + 1 WHERE email = ?", [
+    email.trim().toLowerCase(),
+  ]);
+}
 
 export async function createSession(user: SessionUser) {
-  const token = await new SignJWT({ email: user.email })
+  const rec = await get<{ sessionVersion: number }>(
+    "SELECT session_version AS sessionVersion FROM users WHERE email = ?",
+    [user.email.trim().toLowerCase()]
+  );
+  const sv = rec?.sessionVersion ?? 1;
+  const token = await new SignJWT({ email: user.email, sv })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("7d")
     .sign(authSecret());
   const c = await cookies();
   c.set(COOKIE, token, {
-    httpOnly: true,
+    httpOnly:true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
@@ -53,12 +68,23 @@ export async function getSession(): Promise<SessionUser | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, authSecret());
-    return { email: payload.email as string };
+    const email = payload.email as string;
+    if (!email) return null;
+    // Server-side revocation: the token is only valid while its session
+    // version matches the user's current version in D1. A deleted user or a
+    // bumped version (password change / factory reset) invalidates the JWT
+    // even though its 7-day expiry has not elapsed.
+    const rec = await get<{ sessionVersion: number }>(
+      "SELECT session_version AS sessionVersion FROM users WHERE email = ?",
+      [email]
+    );
+    if (!rec) return null;
+    if ((payload.sv as number | undefined) !== rec.sessionVersion) return null;
+    return { email };
   } catch {
     return null;
   }
 }
-
 export async function hasAnyUser(): Promise<boolean> {
   const rows = await query<{ n: number }>("SELECT COUNT(*) AS n FROM users").catch(() => []);
   return (rows[0]?.n ?? 0) > 0;

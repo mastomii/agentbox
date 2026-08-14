@@ -132,7 +132,8 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS users (
   email         TEXT PRIMARY KEY,
   password_hash TEXT NOT NULL,
-  created_at    INTEGER NOT NULL
+  created_at    INTEGER NOT NULL,
+  session_version INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS api_keys (
   id           TEXT PRIMARY KEY,
@@ -183,6 +184,9 @@ CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
 export async function migrate(): Promise<void> {
   const stmts = SCHEMA.split(";").map((s) => s.trim()).filter(Boolean);
   for (const s of stmts) await run(s);
+  // Additive column migrations for pre-existing databases (CREATE TABLE IF NOT
+  // EXISTS won't alter an existing users table). Ignore "duplicate column".
+  await run("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1").catch(() => {});
 }
 
 // --- settings helpers ---
