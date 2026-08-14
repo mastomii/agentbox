@@ -61,17 +61,17 @@ export function MessageView({ messageId, onDeleted, onBack }: { messageId: strin
   const hasBoth = !!(msg.html_body && msg.text_body);
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       {/* Top action toolbar */}
-      <div className="flex h-16 shrink-0 items-center justify-between border-b bg-card/80 px-4">
-        <div className="flex items-center gap-2">
-          <button onClick={onBack} className="mr-1 flex items-center gap-1 rounded-lg border px-2.5 py-1 text-muted-foreground hover:bg-accent lg:hidden">
+      <div className="flex h-16 shrink-0 items-center justify-between gap-3 overflow-hidden border-b bg-card/80 px-4">
+        <div className="min-w-0 flex items-center gap-2">
+          <button onClick={onBack} className="mr-1 flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-muted-foreground hover:bg-accent lg:hidden">
             <ChevronLeft className="h-4 w-4" />
             <span className="text-xs font-bold">Back</span>
           </button>
-          <span className="hidden text-xs font-bold uppercase tracking-wider text-muted-foreground lg:block">Message Viewer</span>
+          <span className="hidden truncate text-xs font-bold uppercase tracking-wider text-muted-foreground lg:block">Message Viewer</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {hasBoth && (
             <div className="flex shrink-0 rounded-lg border bg-secondary p-0.5">
               <button
@@ -91,17 +91,17 @@ export function MessageView({ messageId, onDeleted, onBack }: { messageId: strin
       </div>
 
       {/* Metadata row */}
-      <div className="flex shrink-0 items-center justify-between border-b bg-sidebar/40 p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md border bg-secondary text-xs font-bold">
+      <div className="flex shrink-0 items-center justify-between overflow-hidden border-b bg-sidebar/40 p-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-secondary text-xs font-bold">
             {initials(msg.from_name, msg.from_addr)}
           </div>
-          <div>
-            <div className="text-sm font-bold">
+          <div className="min-w-0 overflow-hidden">
+            <div className="truncate text-sm font-bold">
               {msg.from_name || msg.from_addr}
               {msg.from_name && <span className="font-normal text-muted-foreground"> &lt;{msg.from_addr}&gt;</span>}
             </div>
-            <div className="text-xs text-muted-foreground">
+            <div className="truncate text-xs text-muted-foreground">
               to <span className="font-mono text-foreground/80">{msg.to_addr}</span> · {date}
             </div>
           </div>
@@ -109,9 +109,9 @@ export function MessageView({ messageId, onDeleted, onBack }: { messageId: strin
       </div>
 
       {/* Body */}
-      <ScrollArea className="flex-1">
-        <div className="space-y-6 p-6 pb-12">
-          <h1 className="mb-2 text-2xl font-bold leading-snug tracking-tight">{msg.subject || "(no subject)"}</h1>
+      <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+        <div className="min-w-0 space-y-6 overflow-hidden p-6 pb-12">
+          <h1 className="mb-2 overflow-hidden break-all text-2xl font-bold leading-snug tracking-tight">{msg.subject || "(no subject)"}</h1>
           {view === "html" && msg.html_body ? (
             <div className="rounded-lg border bg-secondary p-1">
               <iframe
@@ -122,7 +122,7 @@ export function MessageView({ messageId, onDeleted, onBack }: { messageId: strin
               />
             </div>
           ) : (
-            <pre className="whitespace-pre-wrap break-words rounded-lg border bg-secondary p-5 font-mono text-sm leading-relaxed">
+            <pre className="max-w-full overflow-hidden whitespace-pre-wrap break-all rounded-lg border bg-secondary p-5 font-mono text-sm leading-relaxed">
               {msg.text_body || "(empty)"}
             </pre>
           )}
@@ -134,13 +134,13 @@ export function MessageView({ messageId, onDeleted, onBack }: { messageId: strin
                 <Paperclip className="h-3.5 w-3.5" />
                 {msg.attachments.length} attachment{msg.attachments.length > 1 ? "s" : ""}
               </div>
-              <div className="space-y-1.5">
+              <div className="min-w-0 space-y-1.5">
                 {msg.attachments.map((att) => (
                   <a
                     key={att.id}
                     href={`/api/messages/${msg.id}/attachments/${att.id}`}
                     download={att.filename || "attachment"}
-                    className="flex items-center gap-3 rounded-md border bg-secondary/60 px-4 py-2.5 text-sm transition-colors hover:bg-secondary"
+                    className="flex min-w-0 items-center gap-3 overflow-hidden rounded-md border bg-secondary/60 px-4 py-2.5 text-sm transition-colors hover:bg-secondary"
                   >
                     <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate font-medium">{att.filename || "attachment"}</span>
