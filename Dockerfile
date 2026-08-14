@@ -5,7 +5,12 @@
 # Relies on Next.js `output: "standalone"` (see next.config.ts).
 ###############################################################################
 
-ARG NODE_VERSION=22-alpine
+# finding 4: pin the base image to the immutable node:22-alpine manifest
+# digest (multi-arch OCI index). A bare tag is mutable and could resolve to a
+# different — possibly compromised — image between builds. Verify/update with:
+#   docker buildx imagetools inspect node:22-alpine
+# then replace the digest below; the tag stays for human readability.
+ARG NODE_VERSION=22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
 
 # 1. deps — install production+dev deps once, cached on package*.json changes.
 FROM node:${NODE_VERSION} AS deps
