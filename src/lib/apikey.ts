@@ -1,4 +1,4 @@
-import { query, run, get } from "./d1";
+import { ensureSchema, query, run, get } from "./d1";
 import { randomId, sha256 } from "./crypto";
 
 type KeyRow = {
@@ -44,6 +44,11 @@ export async function revokeApiKey(id: string, ownerEmail: string) {
 export async function verifyApiKey(raw: string | null): Promise<{ email: string } | null> {
   if (!raw) return null;
   const hash = sha256(raw.trim());
+  try {
+    await ensureSchema();
+  } catch {
+    return null;
+  }
   const rec = await get<KeyRow>("SELECT id, owner_email, last_used_at FROM api_keys WHERE hash = ?", [hash]);
   if (!rec?.owner_email) return null;
   // best-effort last-used update — throttled to at most once/hour so polling

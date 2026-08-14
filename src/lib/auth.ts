@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
-import { query, run, get } from "./d1";
+import { ensureSchema, query, run, get } from "./d1";
 
 const COOKIE = "agentbox_session";
 
@@ -61,6 +61,7 @@ export async function getSession(): Promise<SessionUser | null> {
   const token = c.get(COOKIE)?.value;
   if (!token) return null;
   try {
+    await ensureSchema();
     const { payload } = await jwtVerify(token, authSecret());
     const email = payload.email as string;
     if (!email) return null;
@@ -79,9 +80,15 @@ export async function getSession(): Promise<SessionUser | null> {
     return null;
   }
 }
+
 export async function hasAnyUser(): Promise<boolean> {
-  const rows = await query<{ n: number }>("SELECT COUNT(*) AS n FROM users").catch(() => []);
-  return (rows[0]?.n ?? 0) > 0;
+  try {
+    await ensureSchema();
+    const rows = await query<{ n: number }>("SELECT COUNT(*) AS n FROM users");
+    return (rows[0]?.n ?? 0) > 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function createUser(email: string, password: string): Promise<SessionUser> {
@@ -106,6 +113,7 @@ export async function createUser(email: string, password: string): Promise<Sessi
 const DUMMY_HASH = "$2b$10$C6UzMDM.H6dfI/f/IKcEeO7ZDk1Gz1z1z1z1z1z1z1z1z1z1z1z1W";
 
 export async function verifyUser(email: string, password: string): Promise<SessionUser | null> {
+  await ensureSchema();
   const e = email.trim().toLowerCase();
   const rec = await get<UserRecord>(
     "SELECT email, password_hash AS passwordHash, created_at AS createdAt, session_version AS sessionVersion FROM users WHERE email = ?",

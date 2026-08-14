@@ -51,7 +51,7 @@ async function cf<T>(endpoint: string, init?: RequestInit): Promise<T> {
 
 // --- bootstrap: account id + database id (memoized per process) ---
 const cache: { accountId?: string; dbId?: string } = {};
-
+let schemaReady: Promise<void> | null = null;
 export async function getAccountId(): Promise<string> {
   if (cache.accountId) return cache.accountId;
   const accounts = await cf<{ id: string; name: string }[]>("/accounts?per_page=50");
@@ -85,6 +85,17 @@ export async function ensureDatabaseId(): Promise<string> {
 
 export function clearDbCache() {
   cache.dbId = undefined;
+  schemaReady = null;
+}
+
+export async function ensureSchema(): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = migrate().catch((error) => {
+      schemaReady = null;
+      throw error;
+    });
+  }
+  await schemaReady;
 }
 
 async function dbId(): Promise<string | null> {
