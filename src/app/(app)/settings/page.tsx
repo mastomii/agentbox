@@ -365,28 +365,29 @@ export default function SettingsPage() {
               D1, Workers, and Email Routing are on Cloudflare&apos;s free tier and do not require a credit card.
               Attachment storage (R2) is auto-provisioned when available — R2 is free up to 10 GB/month but requires a credit card on file.
             </p>
-          
-      {/* Remove domain confirmation */}
-      <Dialog open={removeDomainOpen} onOpenChange={setRemoveDomainOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              Remove domain
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to remove <span className="font-mono font-medium text-foreground">{pendingRemoveDomain}</span>? 
-              All email routing rules for this domain will be deleted. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:gap-2">
-            <Button variant="outline" onClick={() => setRemoveDomainOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={doRemoveDomain}>Remove domain</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-</CardContent>
+
+          </CardContent>
         </Card>
+
+        {/* Remove domain confirmation */}
+        <Dialog open={removeDomainOpen} onOpenChange={setRemoveDomainOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+                Remove domain
+              </DialogTitle>
+              <DialogDescription>
+                Are you sure you want to remove <span className="font-mono font-medium text-foreground">{pendingRemoveDomain}</span>?
+                All email routing rules for this domain will be deleted. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:gap-2">
+              <Button variant="outline" onClick={() => setRemoveDomainOpen(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={doRemoveDomain}>Remove domain</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
        </div>
       </div>
     </>
