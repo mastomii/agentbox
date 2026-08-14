@@ -5,22 +5,16 @@ import { query, run, get } from "./d1";
 
 const COOKIE = "agentbox_session";
 
-// Session signing key. In every deployed/runtime context the AGENTBOX_SECRET
-// env var is REQUIRED — there is no usable fallback, because silently signing
-// with a publicly-known key lets anyone forge an admin session. A non-secret
-// fallback is only acceptable for local `next dev` when no real secret exists.
+// Session signing requires an operator-provided secret in every runtime.
+// Falling back to a public value would let anyone forge an admin session.
 export function authSecret(): Uint8Array {
   const s = process.env.AGENTBOX_SECRET;
-  if (s && s.length >= 32) {
-    return new TextEncoder().encode(s);
-  }
-  if (process.env.NODE_ENV === "production" || process.env.VERCEL || process.env.CF_PAGES) {
+  if (!s || s.length < 32) {
     throw new Error(
-      "AGENTBOX_SECRET env var is required in production (min 32 chars). Generate one with: openssl rand -hex 32"
+      "AGENTBOX_SECRET env var is required (minimum 32 characters). Generate one with: openssl rand -hex 32"
     );
   }
-  // Local development only. Never use this value to sign real sessions.
-  return new TextEncoder().encode("dev-insecure-secret-change-me");
+  return new TextEncoder().encode(s);
 }
 
 export type SessionUser = { email: string };
@@ -49,7 +43,7 @@ export async function createSession(user: SessionUser) {
     .sign(authSecret());
   const c = await cookies();
   c.set(COOKIE, token, {
-    httpOnly:true,
+    httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
