@@ -385,3 +385,57 @@ test("every filename output boundary routes through the centralized encoder", ()
     assert.doesNotMatch(src, /filename:\s*(att|a)\.filename\b/, `${name} must not emit a raw stored filename`);
   }
 });
+
+
+// --- finding 6: setup detection must be a re-checkable async flow, never a one-shot boolean ---
+//
+// The login page's "needsSetup" probe is detection of the live backend state,
+// not a constant: on first run the account does not exist yet, and if
+// /api/auth/setup is unreachable (proxy error, transient network failure) the
+// probe rejects. A one-shot `setNeedsSetup(...)` latch freezes whichever answer
+// arrived first: a failed probe permanently shows the sign-in form to an
+// instance with no admin account, and a successful "needs setup" answer can
+// never be confirmed stale after another client completes setup. The page must
+// instead expose a retry path for the error state and re-detect before
+// submitting credentials, so the form always acts on the freshest answer.
+
+const LOGIN_PAGE_SOURCE = readFileSync(
+  new URL("../src/app/login/page.tsx", import.meta.url),
+  "utf8"
+);
+
+test("login page keeps the setup probe recoverable instead of latching a failed detection", () => {
+  // A failed probe is an unknown state, not "already set up". The page must
+  // offer a retry path (a way to run the detection again), otherwise one
+  // transient error strands every unconfigured instance behind a sign-in form
+  // that can never succeed.
+  const probeRejections = LOGIN_PAGE_SOURCE.match(/catch\(\s*\(\)\s*=>\s*setNeedsSetup\(/g) ?? [];
+  assert.ok(
+    probeRejections.length === 0,
+    "the /api/auth/setup probe must not one-shot latch needsSetup on failure; expose a retry path (e.g. a retry callback that re-runs the probe)"
+  );
+  assert.match(
+    LOGIN_PAGE_SOURCE,
+    /Retry/,
+    "the setup-probe error state must surface a retry affordance"
+  );
+});
+
+test("login page re-detects setup state before submitting credentials", () => {
+  // Detection happens on mount, but the answer can go stale while the form is
+  // open (a second browser tab completes the one-time setup). Submitting
+  // against the stale flag posts credentials to the wrong endpoint; the fix
+  // re-queries /api/auth/setup during submit so the endpoint choice uses the
+  // live state.
+  const probeCalls = LOGIN_PAGE_SOURCE.match(/fetch\(\s*"\/api\/auth\/setup"\s*\)/g) ?? [];
+  assert.ok(
+    probeCalls.length >= 2,
+    `expected the setup probe to run on mount and again on submit (found ${probeCalls.length} call site(s)); the mount-time answer can go stale before the user submits`
+  );
+  const submitBody = LOGIN_PAGE_SOURCE.match(/async function submit[\s\S]*?\n  \}/)?.[0] ?? "";
+  assert.match(
+    submitBody,
+    /\/api\/auth\/setup/,
+    "submit() must re-detect the setup state instead of reusing the stale mount-time flag"
+  );
+});

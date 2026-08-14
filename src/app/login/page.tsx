@@ -17,23 +17,72 @@ const FEATURES = [
 
 export default function LoginPage() {
   const router = useRouter();
-  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+  // finding 6: the setup probe is detection of a live backend state, not a
+  // constant. Keep the probe as a re-checkable flow ({ state, needsSetup })
+  // instead of a one-shot boolean: a rejected probe means "unknown" (offer a
+  // retry), never "already set up", and submit() re-detects before choosing
+  // the endpoint so a stale mount-time answer can't misroute the credentials.
+  const [probe, setProbe] = useState<{ state: "loading" | "error" | "ready"; needsSetup: boolean | null }>({
+    state: "loading",
+    needsSetup: null,
+  });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/auth/setup")
-      .then((r) => r.json())
-      .then((d) => setNeedsSetup(d.needsSetup))
-      .catch(() => setNeedsSetup(false));
+    detectSetup();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Parse the GET /api/auth/setup response into a tri-state flag:
+  //true = no admin account yet,false = already configured, null = unknown
+  // (probe failed). Callers always probe the live endpoint; nothing is cached.
+  async function readSetupState(res: Response): Promise<boolean | null> {
+    if (!res.ok) return null;
+    const d = (await res.json().catch(() => null)) as { needsSetup?: unknown } | null;
+    return typeof d?.needsSetup === "boolean" ? d.needsSetup : null;
+  }
+
+  // Mount-time probe (also used by the Retry button). Populates the form's
+  // visible mode; a failure surfaces the recoverable error state.
+  async function detectSetup(): Promise<void> {
+    setProbe((p) => ({ state: "loading", needsSetup: p.needsSetup }));
+    let needsSetup: boolean | null = null;
+    try {
+      needsSetup = await readSetupState(await fetch("/api/auth/setup"));
+    } catch {
+      needsSetup = null;
+    }
+    if (needsSetup === null) {
+      setProbe({ state: "error", needsSetup: null });
+    } else {
+      setProbe({ state: "ready", needsSetup });
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const url = needsSetup ? "/api/auth/setup" : "/api/auth/login";
+    // finding 6: re-detect before submitting. The mount-time answer can be
+    // stale (a second tab completed the one-time setup) or missing (the probe
+    // failed); never route credentials on a frozen flag. Probe the endpoint
+    // again here, at submit time, against the live backend state.
+    let detected: boolean | null = null;
+    try {
+      detected = await readSetupState(await fetch("/api/auth/setup"));
+    } catch {
+      detected = null;
+    }
+    if (detected === null) {
+      setLoading(false);
+      setProbe({ state: "error", needsSetup: null });
+      toast.error("Could not reach the server — check the connection and retry.");
+      return;
+    }
+    setProbe({ state: "ready", needsSetup: detected });
+    const url = detected ? "/api/auth/setup" : "/api/auth/login";
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -111,7 +160,7 @@ export default function LoginPage() {
             <span className="text-lg font-semibold tracking-tight">AgentBox</span>
           </div>
 
-          {needsSetup === null ? (
+          {probe.state === "loading" ? (
             <div className="space-y-6">
               <div className="space-y-2">
                 <div className="h-7 w-40 animate-pulse rounded-md bg-muted" />
@@ -123,14 +172,26 @@ export default function LoginPage() {
                 <div className="h-10 animate-pulse rounded-md bg-muted" />
               </div>
             </div>
+          ) : probe.state === "error" ? (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <h1 className="text-2xl font-semibold tracking-tight">Can&apos;t reach the server</h1>
+                <p className="text-sm text-muted-foreground">
+                  AgentBox couldn&apos;t determine whether an admin account exists yet.
+                </p>
+              </div>
+              <Button className="w-full" onClick={() => void detectSetup()}>
+                Retry
+              </Button>
+            </div>
           ) : (
             <>
               <div className="mb-6 space-y-1.5">
                 <h1 className="text-2xl font-semibold tracking-tight">
-                  {needsSetup ? "Create your admin account" : "Welcome back"}
+                  {probe.needsSetup ? "Create your admin account" : "Welcome back"}
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  {needsSetup
+                  {probe.needsSetup
                     ? "Set the administrator credentials to secure your dashboard."
                     : "Sign in to manage your agent inboxes."}
                 </p>
@@ -155,7 +216,7 @@ export default function LoginPage() {
                     <Input
                       id="password"
                       type={show ? "text" : "password"}
-                      autoComplete={needsSetup ? "new-password" : "current-password"}
+                      autoComplete={probe.needsSetup ? "new-password" : "current-password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
@@ -172,19 +233,19 @@ export default function LoginPage() {
                       {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                  {needsSetup && (
+                  {probe.needsSetup && (
                     <p className="text-xs text-muted-foreground">Use 12–128 characters.</p>
                   )}
                 </div>
 
                 <Button type="submit" className="mt-2 w-full" disabled={loading}>
                   {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {needsSetup ? "Create account & continue" : "Sign in"}
+                  {probe.needsSetup ? "Create account & continue" : "Sign in"}
                 </Button>
               </form>
 
               <p className="mt-6 text-center text-xs text-muted-foreground">
-                {needsSetup
+                {probe.needsSetup
                   ? "This is the only account — keep these credentials safe."
                   : "Self-hosted AgentBox · your data stays on your server."}
               </p>
