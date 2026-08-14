@@ -16,7 +16,6 @@ export const ATTACHMENT_FILENAME_FALLBACK = "attachment";
 // (quoted-string / attribute breakout), '/' and '\' (path traversal,
 // quoted-pair escapes), and '<' / '>' (markup injection when a name is
 // pasted into HTML contexts).
-// eslint-disable-next-line no-control-regex
 const UNSAFE_FILENAME_CHARS = /[\x00-\x1f\x7f-\x9f"/\\<>]/g;
 
 // Normalize a stored (attacker-controlled) filename into a display-safe
