@@ -93,10 +93,15 @@ export async function hasAnyUser(): Promise<boolean> {
 export async function createUser(email: string, password: string): Promise<SessionUser> {
   const e = email.trim().toLowerCase();
   const hash = await bcrypt.hash(password, 10);
-  await run(
-    "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?) ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash",
-    [e, hash, Date.now()]
-  );
+  // Plain INSERT — no upsert. The previous ON CONFLICT DO UPDATE silently
+  // replaced the password of an existing account, which is an unauthenticated
+  // password-reset primitive if this is ever reached for a registered email.
+  // Creating an account must never mutate an existing one.
+  await run("INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, ?)", [
+    e,
+    hash,
+    Date.now(),
+  ]);
   return { email: e };
 }
 
