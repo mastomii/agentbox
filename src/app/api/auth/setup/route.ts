@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSession, createUser, hasAnyUser } from "@/lib/auth";
-import { isStrongPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@/lib/security";
+import { isStrongPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, normalizeEmail } from "@/lib/security";
 import { hasToken, ensureDatabaseId, migrate } from "@/lib/d1";
 
 export async function GET() {
@@ -16,11 +16,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Already set up" }, { status: 400 });
   }
   const body = await req.json().catch(() => null);
-  const email = typeof body?.email === "string" ? body.email : "";
+  const email = normalizeEmail(body?.email);
   const password = typeof body?.password === "string" ? body.password : "";
   if (!email || !isStrongPassword(password)) {
     return NextResponse.json(
-      { error: `Email and password (${MIN_PASSWORD_LENGTH}-${MAX_PASSWORD_LENGTH} characters) required` },
+      { error: `Valid email and password (${MIN_PASSWORD_LENGTH}-${MAX_PASSWORD_LENGTH} characters) required` },
       { status: 400 }
     );
   }
