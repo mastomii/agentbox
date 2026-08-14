@@ -140,6 +140,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
   name         TEXT NOT NULL,
   prefix       TEXT NOT NULL,
   hash         TEXT NOT NULL UNIQUE,
+  owner_email  TEXT,
   created_at   INTEGER NOT NULL,
   last_used_at INTEGER
 );
@@ -149,6 +150,7 @@ CREATE TABLE IF NOT EXISTS inboxes (
   address         TEXT NOT NULL UNIQUE,
   label           TEXT,
   route_id        TEXT,
+  owner_email     TEXT,
   created_at      INTEGER NOT NULL,
   last_message_at INTEGER
 );
@@ -189,9 +191,20 @@ CREATE TABLE IF NOT EXISTS rate_limits (
 export async function migrate(): Promise<void> {
   const stmts = SCHEMA.split(";").map((s) => s.trim()).filter(Boolean);
   for (const s of stmts) await run(s);
-  // Additive column migrations for pre-existing databases (CREATE TABLE IF NOT
-  // EXISTS won't alter an existing users table). Ignore "duplicate column".
+  // Additive migrations for databases created before ownership columns were
+  // introduced. Existing single-account installations can be backfilled
+  // deterministically; rows without an owner remain inaccessible by design.
   await run("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1").catch(() => {});
+  await run("ALTER TABLE api_keys ADD COLUMN owner_email TEXT").catch(() => {});
+  await run("ALTER TABLE inboxes ADD COLUMN owner_email TEXT").catch(() => {});
+  await run(
+    "UPDATE inboxes SET owner_email = (SELECT email FROM users LIMIT 1) WHERE owner_email IS NULL AND (SELECT COUNT(*) FROM users) = 1"
+  );
+  await run(
+    "UPDATE api_keys SET owner_email = (SELECT email FROM users LIMIT 1) WHERE owner_email IS NULL AND (SELECT COUNT(*) FROM users) = 1"
+  );
+  await run("CREATE INDEX IF NOT EXISTS idx_api_keys_owner ON api_keys(owner_email)");
+  await run("CREATE INDEX IF NOT EXISTS idx_inboxes_owner ON inboxes(owner_email)");
 }
 
 // --- settings helpers ---

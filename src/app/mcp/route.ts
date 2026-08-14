@@ -8,6 +8,7 @@ import {
   listMessages, findMessageById, listAttachments, deleteMessage,
   getAttachment, markSeen,
 } from "@/lib/mail-store";
+import type { MessageRecord } from "@/lib/mail-store";
 
 // MCP Streamable-HTTP endpoint (POST /mcp). JSON-RPC 2.0. Same Bearer/x-api-key
 // auth as /v1, same tools 1:1. get_attachment only advertised when R2 enabled.
@@ -65,14 +66,14 @@ const attachmentTool = {
   inputSchema: { type: "object", properties: { mid: { type: "string" }, aid: { type: "string" } }, required: ["mid", "aid"] },
 };
 
-function shapeMessages(recs: Awaited<ReturnType<typeof listMessages>>, limit = 100) {
+function shapeMessages(recs: MessageRecord[], limit = 100) {
   return recs.slice(0, limit).map((m) => ({
     id: m.id, from: m.from, fromName: m.fromName ?? null, to: m.to,
     subject: m.subject ?? null, text: m.text ?? null, receivedAt: m.receivedAt,
   }));
 }
 
-async function callTool(origin: string, name: string, raw: Record<string, unknown>) {
+async function callTool(origin: string, name: string, raw: Record<string, unknown>, ownerEmail: string) {
   const args = raw as {
     limit?: number; address?: string; local?: string; label?: string;
     id?: string; mid?: string; aid?: string; since?: number; wait?: number; ids?: unknown;
@@ -80,7 +81,7 @@ async function callTool(origin: string, name: string, raw: Record<string, unknow
   switch (name) {
     case "list_inboxes": {
       const limit = Math.min(Number(args.limit) || 50, 100);
-      let inboxes = await listInboxes();
+      let inboxes = await listInboxes(ownerEmail);
       if (args.address) inboxes = inboxes.filter((i) => i.address === args.address);
       return text({ inboxes: inboxes.slice(0, limit).map((i) => ({ id: i.id, address: i.address, label: i.label, created_at: i.created_at, last_message_at: i.last_message_at })) });
     }
@@ -90,9 +91,9 @@ async function callTool(origin: string, name: string, raw: Record<string, unknow
       let local = (args.local || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "");
       if (!local) local = randomLocal();
       const address = `${local}@${cfg.domain}`;
-      if (await getInboxByAddress(address)) throw new Error("inbox already exists");
+      if (await getInboxByAddress(address, ownerEmail)) throw new Error("inbox already exists");
       try {
-        const inbox = await createInbox(address, args.label || null);
+        const inbox = await createInbox(address, ownerEmail, args.label || null);
         return text({ id: inbox.id, address: inbox.address });
       } catch (e) {
         const msg = (e as Error).message;
@@ -101,23 +102,23 @@ async function callTool(origin: string, name: string, raw: Record<string, unknow
     }
     case "delete_inbox": {
       if (!args.id) throw new Error("id required");
-      const inbox = await getInbox(args.id);
+      const inbox = await getInbox(args.id, ownerEmail);
       if (!inbox) throw new Error("unknown inbox");
-      await deleteInbox(args.id);
+      await deleteInbox(args.id, ownerEmail);
       return text({ ok: true, id: args.id });
     }
     case "list_messages": {
       if (!args.id) throw new Error("id required");
-      const inbox = await getInbox(args.id);
+      const inbox = await getInbox(args.id, ownerEmail);
       if (!inbox) throw new Error("unknown inbox");
       const addr = inbox.address.toLowerCase();
       const since = Number(args.since) || 0;
       const wait = Math.min(Number(args.wait) || 0, 55);
       const limit = Math.min(Number(args.limit) || 100, 100);
       const deadline = Date.now() + wait * 1000;
-      let messages: ReturnType<typeof shapeMessages> = [];
+      let messages = shapeMessages([], limit);
       do {
-        messages = shapeMessages(await listMessages(addr, since), limit);
+        messages = shapeMessages(await listMessages(addr, ownerEmail, since), limit);
         if (messages.length > 0 || Date.now() >= deadline) break;
         await new Promise((r) => setTimeout(r, 2500));
       } while (Date.now() < deadline);
@@ -125,10 +126,10 @@ async function callTool(origin: string, name: string, raw: Record<string, unknow
     }
     case "get_message": {
       if (!args.mid) throw new Error("mid required");
-      const found = await findMessageById(args.mid);
+      const found = await findMessageById(args.mid, ownerEmail);
       if (!found) throw new Error("message not found");
       const m = found.rec;
-      const attachments = await listAttachments(args.mid);
+      const attachments = await listAttachments(args.mid, ownerEmail);
       return text({
         message: {
           id: m.id, from: m.from, fromName: m.fromName ?? null, to: m.to,
@@ -139,18 +140,18 @@ async function callTool(origin: string, name: string, raw: Record<string, unknow
     }
     case "delete_message": {
       if (!args.mid) throw new Error("mid required");
-      await deleteMessage(args.mid);
+      await deleteMessage(args.mid, ownerEmail);
       return text({ ok: true, id: args.mid });
     }
     case "mark_seen": {
-      const ids = (Array.isArray(args.ids) ? args.ids : []).map(String);
-      await markSeen(ids);
+      const ids = (Array.isArray(args.ids) ? args.ids : []).filter((id): id is string => typeof id === "string");
+      await markSeen(ids, ownerEmail);
       return text({ ok: true, count: ids.length });
     }
     case "get_attachment": {
       if ((await getSetting("r2_enabled")) !== "1") throw new Error("attachments unavailable: R2 not enabled");
-      if (!args.aid) throw new Error("aid required");
-      const att = await getAttachment(args.aid);
+      if (!args.mid || !args.aid) throw new Error("mid and aid required");
+      const att = await getAttachment(args.aid, ownerEmail, args.mid);
       if (!att) throw new Error("attachment not found");
       return text({ id: att.id, filename: att.filename, contentType: att.content_type, size: att.size, url: `${origin}/v1/messages/${args.mid}/attachments/${args.aid}` });
     }
@@ -160,7 +161,8 @@ async function callTool(origin: string, name: string, raw: Record<string, unknow
 }
 
 export async function POST(req: Request) {
-  if (!(await verifyApiKey(bearerFrom(req)))) return NextResponse.json(err(null, -32001, "unauthorized"), { status: 401 });
+  const identity = await verifyApiKey(bearerFrom(req));
+  if (!identity) return NextResponse.json(err(null, -32001, "unauthorized"), { status: 401 });
 
   const rpc = (await req.json().catch(() => null)) as Rpc | null;
   if (!rpc || rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") {
@@ -188,7 +190,7 @@ export async function POST(req: Request) {
         const name = rpc.params?.name as string;
         const args = (rpc.params?.arguments ?? {}) as Record<string, unknown>;
         try {
-          const result = await callTool(new URL(req.url).origin, name, args);
+          const result = await callTool(new URL(req.url).origin, name, args, identity.email);
           return NextResponse.json(ok(rpc.id, result));
         } catch (e) {
           // Tool errors are reported in-band (isError) per MCP spec, not as RPC errors.

@@ -6,10 +6,11 @@ import { cfToken, getAccountId } from "@/lib/d1";
 
 // GET /api/messages/:mid/attachments/:aid — stream attachment from R2
 export async function GET(_req: Request, { params }: { params: Promise<{ mid: string; aid: string }> }) {
-  if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const { aid } = await params;
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const { mid, aid } = await params;
 
-  const att = await getAttachment(aid);
+  const att = await getAttachment(aid, session.email, mid);
   if (!att) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const cfg = await getCfConfig();

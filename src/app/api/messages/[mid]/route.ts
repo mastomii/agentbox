@@ -3,12 +3,13 @@ import { getSession } from "@/lib/auth";
 import { findMessageById, deleteMessage, listAttachments } from "@/lib/mail-store";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ mid: string }> }) {
-  if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { mid } = await params;
-  const found = await findMessageById(mid);
+  const found = await findMessageById(mid, session.email);
   if (!found) return NextResponse.json({ error: "not found" }, { status: 404 });
   const m = found.rec;
-  const attachments = await listAttachments(mid);
+  const attachments = await listAttachments(mid, session.email);
   return NextResponse.json({
     message: {
       id: m.id,
@@ -31,8 +32,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ mid: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ mid: string }> }) {
-  if (!(await getSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { mid } = await params;
-  await deleteMessage(mid);
+  await deleteMessage(mid, session.email);
   return NextResponse.json({ ok: true });
 }

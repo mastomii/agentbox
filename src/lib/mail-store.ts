@@ -37,6 +37,7 @@ type InboxRow = {
   address: string;
   label: string | null;
   route_id: string | null;
+  owner_email: string | null;
   created_at: number;
   last_message_at: number | null;
 };
@@ -52,31 +53,38 @@ function toInbox(r: InboxRow): Inbox {
 }
 
 // --- inboxes ---
-export async function listInboxes(): Promise<Inbox[]> {
+export async function listInboxes(ownerEmail: string): Promise<Inbox[]> {
   const rows = await query<InboxRow>(
-    "SELECT id, address, label, route_id, created_at, last_message_at FROM inboxes ORDER BY created_at DESC"
+    "SELECT id, address, label, route_id, owner_email, created_at, last_message_at FROM inboxes WHERE owner_email = ? ORDER BY created_at DESC",
+    [ownerEmail]
   );
   return rows.map(toInbox);
 }
 
-export async function getInbox(id: string): Promise<Inbox | null> {
+export async function getInbox(id: string, ownerEmail: string): Promise<Inbox | null> {
   const r = await get<InboxRow>(
-    "SELECT id, address, label, route_id, created_at, last_message_at FROM inboxes WHERE id = ?",
-    [id]
+    "SELECT id, address, label, route_id, owner_email, created_at, last_message_at FROM inboxes WHERE id = ? AND owner_email = ?",
+    [id, ownerEmail]
   );
   return r ? toInbox(r) : null;
 }
 
-export async function getInboxByAddress(address: string): Promise<Inbox | null> {
+export async function getInboxByAddress(address: string, ownerEmail: string): Promise<Inbox | null> {
   const r = await get<InboxRow>(
-    "SELECT id, address, label, route_id, created_at, last_message_at FROM inboxes WHERE address = ?",
-    [address.toLowerCase()]
+    "SELECT id, address, label, route_id, owner_email, created_at, last_message_at FROM inboxes WHERE address = ? AND owner_email = ?",
+    [address.toLowerCase(), ownerEmail]
   );
   return r ? toInbox(r) : null;
 }
 
-export async function createInbox(address: string, label?: string | null): Promise<Inbox> {
+export async function createInbox(
+  address: string,
+  ownerEmail: string,
+  label?: string | null,
+): Promise<Inbox> {
   const addr = address.toLowerCase();
+  const owner = ownerEmail.trim().toLowerCase();
+  if (!owner) throw new Error("Inbox owner is required");
   const id = `inbox_${randomId(8)}`;
 
   // Register an explicit Email Routing rule that delivers this address to the
@@ -90,22 +98,21 @@ export async function createInbox(address: string, label?: string | null): Promi
 
   const createdAt = Date.now();
   await run(
-    "INSERT INTO inboxes (id, address, label, route_id, created_at, last_message_at) VALUES (?, ?, ?, ?, ?, NULL)",
-    [id, addr, label || null, routeId, createdAt]
+    "INSERT INTO inboxes (id, address, label, route_id, owner_email, created_at, last_message_at) VALUES (?, ?, ?, ?, ?, ?, NULL)",
+    [id, addr, label || null, routeId, owner, createdAt]
   );
   return { id, address: addr, label: label || null, created_at: createdAt, last_message_at: null };
 }
 
-export async function deleteInbox(id: string): Promise<void> {
-  const inbox = await getInbox(id);
+export async function deleteInbox(id: string, ownerEmail: string): Promise<void> {
+  const inbox = await getInbox(id, ownerEmail);
   if (!inbox) return;
   // Remove the Cloudflare routing rule for this address (best-effort, in its zone).
   const domain = inbox.address.split("@")[1] || "";
   const cfg = (await getCfConfigForDomain(domain)) || (await getCfConfig());
   if (cfg) await deleteEmailRouteByAddress(cfg, inbox.address).catch(() => {});
-  // One DELETE wipes all the inbox's mail; one removes the inbox.
   await run("DELETE FROM messages WHERE address = ?", [inbox.address]);
-  await run("DELETE FROM inboxes WHERE id = ?", [id]);
+  await run("DELETE FROM inboxes WHERE id = ? AND owner_email = ?", [id, ownerEmail]);
 }
 
 // --- messages ---
@@ -148,7 +155,11 @@ export type MessageSummary = {
   seen: boolean;
 };
 
-export async function listMessageSummaries(address: string, limit = 200): Promise<MessageSummary[]> {
+export async function listMessageSummaries(
+  address: string,
+  ownerEmail: string,
+  limit = 200,
+): Promise<MessageSummary[]> {
   const rows = await query<{
     id: string;
     from_addr: string | null;
@@ -158,8 +169,8 @@ export async function listMessageSummaries(address: string, limit = 200): Promis
     received_at: number;
     seen: number;
   }>(
-    "SELECT id, from_addr, from_name, subject, preview, received_at, seen FROM messages WHERE address = ? ORDER BY received_at DESC LIMIT ?",
-    [address.toLowerCase(), limit]
+    "SELECT m.id, m.from_addr, m.from_name, m.subject, m.preview, m.received_at, m.seen FROM messages m JOIN inboxes i ON i.address = m.address WHERE m.address = ? AND i.owner_email = ? ORDER BY m.received_at DESC LIMIT ?",
+    [address.toLowerCase(), ownerEmail, limit]
   );
   return rows.map((r) => ({
     id: r.id,
@@ -172,35 +183,54 @@ export async function listMessageSummaries(address: string, limit = 200): Promis
   }));
 }
 
-export async function listMessages(address: string, since = 0): Promise<MessageRecord[]> {
+export async function listMessages(
+  address: string,
+  ownerEmail: string,
+  since = 0,
+): Promise<MessageRecord[]> {
   const rows = await query<MsgRow>(
-    "SELECT * FROM messages WHERE address = ? AND received_at > ? ORDER BY received_at DESC LIMIT 200",
-    [address.toLowerCase(), since]
+    "SELECT m.* FROM messages m JOIN inboxes i ON i.address = m.address WHERE m.address = ? AND i.owner_email = ? AND m.received_at > ? ORDER BY m.received_at DESC LIMIT 200",
+    [address.toLowerCase(), ownerEmail, since]
   );
   return rows.map(toRecord);
 }
 
-// Find a message by id alone (used by the dashboard message endpoint).
-export async function findMessageById(id: string): Promise<{ address: string; rec: MessageRecord } | null> {
-  const r = await get<MsgRow>("SELECT * FROM messages WHERE id = ?", [id]);
+export async function findMessageById(
+  id: string,
+  ownerEmail: string,
+): Promise<{ address: string; rec: MessageRecord } | null> {
+  const r = await get<MsgRow>(
+    "SELECT m.* FROM messages m JOIN inboxes i ON i.address = m.address WHERE m.id = ? AND i.owner_email = ?",
+    [id, ownerEmail]
+  );
   return r ? { address: r.address, rec: toRecord(r) } : null;
 }
 
-export async function deleteMessage(id: string): Promise<void> {
-  await run("DELETE FROM messages WHERE id = ?", [id]);
+export async function deleteMessage(id: string, ownerEmail: string): Promise<void> {
+  await run(
+    "DELETE FROM messages WHERE id = ? AND EXISTS (SELECT 1 FROM inboxes i WHERE i.address = messages.address AND i.owner_email = ?)",
+    [id, ownerEmail]
+  );
 }
 
-export async function deleteMessages(ids: string[]): Promise<void> {
+export async function deleteMessages(ids: string[], ownerEmail: string, address?: string): Promise<void> {
   if (!ids.length) return;
   const placeholders = ids.map(() => "?").join(",");
-  await run(`DELETE FROM messages WHERE id IN (${placeholders})`, ids);
+  const addressClause = address ? " AND address = ?" : "";
+  await run(
+    `DELETE FROM messages WHERE id IN (${placeholders}) AND EXISTS (SELECT 1 FROM inboxes i WHERE i.address = messages.address AND i.owner_email = ?)${addressClause}`,
+    address ? [...ids, ownerEmail, address] : [...ids, ownerEmail]
+  );
 }
 
 // --- read/unread state ---
-export async function markSeen(ids: string[]): Promise<void> {
+export async function markSeen(ids: string[], ownerEmail: string): Promise<void> {
   if (!ids.length) return;
   const placeholders = ids.map(() => "?").join(",");
-  await run(`UPDATE messages SET seen = 1 WHERE id IN (${placeholders})`, ids);
+  await run(
+    `UPDATE messages SET seen = 1 WHERE id IN (${placeholders}) AND EXISTS (SELECT 1 FROM inboxes i WHERE i.address = messages.address AND i.owner_email = ?)`,
+    [...ids, ownerEmail]
+  );
 }
 
 // --- attachments ---
@@ -213,29 +243,45 @@ export type AttachmentMeta = {
   r2_key: string;
 };
 
-export async function listAttachments(messageId: string): Promise<AttachmentMeta[]> {
+export async function listAttachments(messageId: string, ownerEmail: string): Promise<AttachmentMeta[]> {
   return query<AttachmentMeta>(
-    "SELECT id, message_id, filename, content_type, size, r2_key FROM attachments WHERE message_id = ?",
-    [messageId]
+    `SELECT a.id, a.message_id, a.filename, a.content_type, a.size, a.r2_key
+       FROM attachments a
+       JOIN messages m ON m.id = a.message_id
+       JOIN inboxes i ON i.address = m.address
+      WHERE a.message_id = ? AND i.owner_email = ?`,
+    [messageId, ownerEmail]
   );
 }
 
-export async function getAttachment(attachmentId: string): Promise<AttachmentMeta | null> {
+export async function getAttachment(
+  attachmentId: string,
+  ownerEmail: string,
+  messageId?: string,
+): Promise<AttachmentMeta | null> {
+  const pathClause = messageId ? " AND a.message_id = ?" : "";
+  const params = messageId ? [attachmentId, ownerEmail, messageId] : [attachmentId, ownerEmail];
   return get<AttachmentMeta>(
-    "SELECT id, message_id, filename, content_type, size, r2_key FROM attachments WHERE id = ?",
-    [attachmentId]
+    `SELECT a.id, a.message_id, a.filename, a.content_type, a.size, a.r2_key
+       FROM attachments a
+       JOIN messages m ON m.id = a.message_id
+       JOIN inboxes i ON i.address = m.address
+      WHERE a.id = ? AND i.owner_email = ?${pathClause}`,
+    params
   );
 }
 
 // One call → inboxes + their unread counts (a single grouped query).
-export async function listInboxesWithUnread(): Promise<(Inbox & { unread: number })[]> {
+export async function listInboxesWithUnread(ownerEmail: string): Promise<(Inbox & { unread: number })[]> {
   const rows = await query<InboxRow & { unread: number }>(
-    `SELECT i.id, i.address, i.label, i.route_id, i.created_at, i.last_message_at,
+    `SELECT i.id, i.address, i.label, i.route_id, i.owner_email, i.created_at, i.last_message_at,
             COALESCE(SUM(CASE WHEN m.seen = 0 THEN 1 ELSE 0 END), 0) AS unread
        FROM inboxes i
        LEFT JOIN messages m ON m.address = i.address
+      WHERE i.owner_email = ?
       GROUP BY i.id
-      ORDER BY i.created_at DESC`
+      ORDER BY i.created_at DESC`,
+    [ownerEmail]
   );
   return rows.map((r) => ({ ...toInbox(r), unread: Number(r.unread) || 0 }));
 }
