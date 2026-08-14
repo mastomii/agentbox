@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import type { MessageFull } from "./types";
 import { initials } from "./types";
+import { safeAttachmentFilename } from "@/lib/attachment-filename";
 
 export function MessageView({ messageId, onDeleted, onBack }: { messageId: string | null; onDeleted: () => void; onBack: () => void }) {
   const [msg, setMsg] = useState<MessageFull | null>(null);
@@ -139,11 +140,15 @@ export function MessageView({ messageId, onDeleted, onBack }: { messageId: strin
                   <a
                     key={att.id}
                     href={`/api/messages/${msg.id}/attachments/${att.id}`}
-                    download={att.filename || "attachment"}
+                    // finding 5: the API already emits a sanitized name; the
+                    // centralized encoder is applied again at this sink so the
+                    // download attribute and rendered label are safe even for
+                    // legacy/unsanitized payloads.
+                    download={safeAttachmentFilename(att.filename)}
                     className="flex min-w-0 items-center gap-3 overflow-hidden rounded-md border bg-secondary/60 px-4 py-2.5 text-sm transition-colors hover:bg-secondary"
                   >
                     <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate font-medium">{att.filename || "attachment"}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{safeAttachmentFilename(att.filename)}</span>
                     {att.size != null && (
                       <span className="shrink-0 text-xs text-muted-foreground">
                         {att.size < 1024 ? `${att.size} B` : att.size < 1048576 ? `${(att.size / 1024).toFixed(1)} KB` : `${(att.size / 1048576).toFixed(1)} MB`}

@@ -9,6 +9,7 @@ import {
   getAttachment, markSeen,
 } from "@/lib/mail-store";
 import type { MessageRecord } from "@/lib/mail-store";
+import { safeAttachmentFilename } from "@/lib/attachment-filename";
 
 // MCP Streamable-HTTP endpoint (POST /mcp). JSON-RPC 2.0. Same Bearer/x-api-key
 // auth as /v1, same tools 1:1. get_attachment only advertised when R2 enabled.
@@ -134,7 +135,7 @@ async function callTool(origin: string, name: string, raw: Record<string, unknow
         message: {
           id: m.id, from: m.from, fromName: m.fromName ?? null, to: m.to,
           subject: m.subject ?? null, text: m.text ?? null, html: m.html ?? null, receivedAt: m.receivedAt,
-          attachments: attachments.map((a) => ({ id: a.id, filename: a.filename, contentType: a.content_type, size: a.size })),
+          attachments: attachments.map((a) => ({ id: a.id, filename: safeAttachmentFilename(a.filename), contentType: a.content_type, size: a.size })),
         },
       });
     }
@@ -153,7 +154,7 @@ async function callTool(origin: string, name: string, raw: Record<string, unknow
       if (!args.mid || !args.aid) throw new Error("mid and aid required");
       const att = await getAttachment(args.aid, ownerEmail, args.mid);
       if (!att) throw new Error("attachment not found");
-      return text({ id: att.id, filename: att.filename, contentType: att.content_type, size: att.size, url: `${origin}/v1/messages/${args.mid}/attachments/${args.aid}` });
+      return text({ id: att.id, filename: safeAttachmentFilename(att.filename), contentType: att.content_type, size: att.size, url: `${origin}/v1/messages/${args.mid}/attachments/${args.aid}` });
     }
     default:
       throw new Error(`unknown tool: ${name}`);

@@ -4,6 +4,7 @@ import { getAttachment } from "@/lib/mail-store";
 import { getCfConfig, R2_BUCKET_NAME } from "@/lib/cloudflare";
 import { cfToken, getAccountId } from "@/lib/d1";
 import { encodeR2Key } from "@/lib/r2-attachments";
+import { contentDispositionAttachment } from "@/lib/attachment-filename";
 
 // Indirection seam so tests can substitute the side-effecting collaborators.
 // Production behavior is unchanged: these are the real implementations.
@@ -35,11 +36,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ mid: str
   const r2Res = await _deps.fetch(r2Url, { headers: { Authorization: `Bearer ${_deps.cfToken()}` } });
   if (!r2Res.ok) return NextResponse.json({ error: "attachment unavailable" }, { status: 502 });
 
-  const filename = att.filename || "attachment";
+  // finding 5: the stored filename is attacker-controlled; build the header
+  // via the centralized RFC 6266/5987 encoder, never raw interpolation.
   return new NextResponse(r2Res.body, {
     headers: {
       "Content-Type": att.content_type || "application/octet-stream",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": contentDispositionAttachment(att.filename),
       ...(att.size ? { "Content-Length": String(att.size) } : {}),
     },
   });

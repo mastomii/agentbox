@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { clientKey, isStrongPassword, normalizeEmail } from "../src/lib/security.ts";
 import { RateLimitWindow } from "../src/lib/rate-limit-window.ts";
 import { POST as setupPost, _deps } from "../src/app/api/auth/setup/route.ts";
 import { EMAIL_WORKER_SOURCE } from "../src/lib/worker-template.ts";
 import { GET as dashboardAttachmentGet, _deps as dashboardAttachmentDeps } from "../src/app/api/messages/[mid]/attachments/[aid]/route.ts";
 import { GET as v1AttachmentGet, _deps as v1AttachmentDeps } from "../src/app/v1/messages/[mid]/attachments/[aid]/route.ts";
+
+import { safeAttachmentFilename, contentDispositionAttachment } from "../src/lib/attachment-filename.ts";
 
 test("normalizeEmail canonicalizes valid setup addresses", () => {
   assert.equal(normalizeEmail("  Admin@Example.COM "), "admin@example.com");
@@ -220,5 +223,165 @@ test("dashboard and v1 attachment routes share the key-encoding contract", async
   for (const url of objectUrls) {
     assert.match(url, /objects\/msg_1\/0_legacy%20report%20\(final\)\.pdf$/);
     assert.doesNotMatch(url, /objects\/msg_1%2F0/); // '/' must survive as the object path separator
+  }
+});
+
+
+// --- finding 5: attacker-controlled attachment filenames must be encoded at every output boundary ---
+//
+// The raw filename is sender-controlled MIME data persisted verbatim in D1
+// (finding 2 contract). It is emitted as JSON (dashboard/v1 API + MCP text
+// content), spliced into a Content-Disposition header, and rendered/downloaded
+// in the dashboard. safeAttachmentFilename() is the single normalizer every
+// one of those boundaries must use; contentDispositionAttachment() builds the
+// RFC 6266/5987 header value on top of it.
+
+test("safeAttachmentFilename strips CR/LF/control chars and header-breaking characters", () => {
+  // Header/log injection: raw control bytes must never survive to a sink.
+  const evil = 'x"\r\nContent-Type: text/html\r\n\r\n<script>alert(1)</script>';
+  assert.equal(safeAttachmentFilename(evil), "x___Content-Type: text_html_____script_alert(1)__script_");
+  // Path traversal separators are rewritten, not passed through.
+  assert.equal(safeAttachmentFilename("../../etc/passwd"), ".._.._etc_passwd");
+  assert.equal(safeAttachmentFilename("..\\..\\windows\\system32"), ".._.._windows_system32");
+  // Quotes and backslashes cannot break out of a quoted header string or attr.
+  assert.equal(safeAttachmentFilename('a"b\\c.pdf'), "a_b_c.pdf");
+  // C0/C1/DEL control characters are each replaced.
+  assert.equal(safeAttachmentFilename("ab\x00\x1f\x7f\x85c.txt"), "ab____c.txt");
+  // Safe names pass through untouched; empty/missing names get the fallback.
+  assert.equal(safeAttachmentFilename("invoice (final) [v2].pdf"), "invoice (final) [v2].pdf");
+  assert.equal(safeAttachmentFilename(""), "attachment");
+  assert.equal(safeAttachmentFilename(null), "attachment");
+  assert.equal(safeAttachmentFilename(undefined), "attachment");
+  assert.equal(safeAttachmentFilename(123), "attachment");
+});
+
+test("safeAttachmentFilename preserves non-ASCII display names and bounds length", () => {
+  // Unicode display names stay readable (mojibake is fine, but don't destroy it).
+  assert.equal(safeAttachmentFilename("rapport été 2024.pdf"), "rapport été 2024.pdf");
+  assert.equal(safeAttachmentFilename("画像.png"), "画像.png");
+  // Oversized names are capped so headers/JSON stay bounded.
+  const long = "a".repeat(500) + ".pdf";
+  const out = safeAttachmentFilename(long);
+  assert.ok(out.length <= 128, `expected <=128 chars, got ${out.length}`);
+  assert.ok(out.endsWith(".pdf"));
+});
+
+test("contentDispositionAttachment emits an RFC-safe header for hostile filenames", () => {
+  const evil = 'x"\r\nSet-Cookie: pwned=1\r\n\r\n<p>pwnd</p>.txt';
+  const value = contentDispositionAttachment(evil);
+  // Quoted-string fallback must not contain CR, LF, raw quotes or backslashes.
+  const quoted = value.match(/filename="([^"]*)"/)![1];
+  assert.doesNotMatch(quoted, /[\r\n"\\]/);
+  const extended = value.match(/filename\*=UTF-8''([^;]+)/)![1];
+  assert.equal(decodeURIComponent(extended), evil);
+  assert.equal(
+    contentDispositionAttachment("résumé.pdf"),
+    "attachment; filename=\"r_sum_.pdf\"; filename*=UTF-8''r%C3%A9sum%C3%A9%2Epdf"
+  );
+  assert.equal(contentDispositionAttachment(null), 'attachment; filename="attachment"; filename*=UTF-8\'\'attachment');
+});
+
+test("attachment download routes never emit raw filename bytes in Content-Disposition", async (t) => {
+  const raw = 'x"\r\nSet-Cookie: pwned=1\r\n\r\n<p>pwnd</p>.txt';
+  stubAttachmentDeps(t, {
+    getAttachment: async () => ({
+      id: "att_1",
+      message_id: "msg_1",
+      filename: raw,
+      content_type: "text/plain",
+      size: null,
+      r2_key: "msg_1/att_1",
+    }),
+    fetch: (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/r2/buckets/")) return new Response("bytes", { status: 200 });
+      return new Response(JSON.stringify({ success:true, errors: [], result:[] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  const dashboardReq = new Request("https://example.test/api/messages/msg_1/attachments/att_1");
+  const dashboardRes = await dashboardAttachmentGet(dashboardReq, { params: attachmentParams });
+  assert.equal(dashboardRes.status, 200);
+
+  const v1Req = new Request("https://example.test/v1/messages/msg_1/attachments/att_1", {
+    headers: { authorization: "Bearer ab_test" },
+  });
+  const v1Res = await v1AttachmentGet(v1Req, { params: attachmentParams });
+  assert.equal(v1Res.status, 200);
+
+  for (const res of [dashboardRes, v1Res]) {
+    const cd = res.headers.get("content-disposition") ?? "";
+    assert.doesNotMatch(cd, /[\r\n]/, "header must be a single line");
+    assert.match(cd, /^attachment; filename="[^"]*"; filename\*=UTF-8''[^;]+$/);
+    // The full attacker name still reaches capable clients, RFC 5987-encoded.
+    const extended = cd.match(/filename\*=UTF-8''([^;]+)/)![1];
+    assert.equal(decodeURIComponent(extended), raw);
+  }
+});
+
+test("message detail routes emit sanitized display filenames in JSON bodies", async (t) => {
+  const raw = 'x"\r\nSet-Cookie: pwned=1\r\n\r\n<p>pwnd</p>.txt';
+  const { GET: dashboardMessageGet, _deps: dashboardMessageDeps } =
+    await import("../src/app/api/messages/[mid]/route.ts");
+  const { GET: v1MessageGet, _deps: v1MessageDeps } =
+    await import("../src/app/v1/messages/[mid]/route.ts");
+  const dashboardOriginals = { ...dashboardMessageDeps };
+  const v1Originals = { ...v1MessageDeps };
+  t.after(() => {
+    Object.assign(dashboardMessageDeps, dashboardOriginals);
+    Object.assign(v1MessageDeps, v1Originals);
+  });
+  const shared = {
+    getSession: async () => ({ email: "owner@example.com" }),
+    verifyApiKey: async () => ({ email: "owner@example.com" }),
+    findMessageById: async () => ({
+      address: "inbox@example.com",
+      rec: { id: "msg_1", from: "sender@example.com", fromName: null, to: "inbox@example.com", subject: null, text: null, html: null, receivedAt: 1 },
+    }),
+    listAttachments: async () => [
+      { id: "att_1", message_id: "msg_1", filename: raw, content_type: "text/plain", size: 3, r2_key: "msg_1/att_1" },
+    ],
+  };
+  Object.assign(dashboardMessageDeps, shared);
+  Object.assign(v1MessageDeps, shared);
+
+  const dashboardRes = await dashboardMessageGet(
+    new Request("https://example.test/api/messages/msg_1"),
+    { params: Promise.resolve({ mid: "msg_1" }) }
+  );
+  const v1Res = await v1MessageGet(
+    new Request("https://example.test/v1/messages/msg_1", { headers: { authorization: "Bearer ab_test" } }),
+    { params: Promise.resolve({ mid: "msg_1" }) }
+  );
+
+  for (const res of [dashboardRes, v1Res]) {
+    assert.equal(res.status, 200);
+    const body = await res.json() as { message: { attachments: { filename: string }[] } };
+    const emitted = body.message.attachments[0].filename;
+    assert.equal(emitted, safeAttachmentFilename(raw));
+    assert.notEqual(emitted, raw);
+    assert.doesNotMatch(emitted, /[\r\n"\\/<>]/);
+  }
+});
+
+test("every filename output boundary routes through the centralized encoder", () => {
+  // finding 5 is a shared-contract fix: no sink may build its own filename
+  // string from att.filename / a.filename again. Guard structurally so a
+  // future route can't quietly reintroduce raw interpolation.
+  const sources = {
+    dashboardAttachment: readFileSync(new URL("../src/app/api/messages/[mid]/attachments/[aid]/route.ts", import.meta.url), "utf8"),
+    v1Attachment: readFileSync(new URL("../src/app/v1/messages/[mid]/attachments/[aid]/route.ts", import.meta.url), "utf8"),
+    dashboardMessage: readFileSync(new URL("../src/app/api/messages/[mid]/route.ts", import.meta.url), "utf8"),
+    v1Message: readFileSync(new URL("../src/app/v1/messages/[mid]/route.ts", import.meta.url), "utf8"),
+    mcp: readFileSync(new URL("../src/app/mcp/route.ts", import.meta.url), "utf8"),
+    messageView: readFileSync(new URL("../src/components/mail/message-view.tsx", import.meta.url), "utf8"),
+  };
+  for (const [name, src] of Object.entries(sources)) {
+    assert.match(src, /attachment-filename/, `${name} must import the centralized filename encoder`);
+    assert.doesNotMatch(src, /filename="\$\{/, `${name} must not interpolate a raw filename into a header`);
+    assert.doesNotMatch(src, /filename:\s*(att|a)\.filename\b/, `${name} must not emit a raw stored filename`);
   }
 });
