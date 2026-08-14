@@ -173,7 +173,7 @@ export default function LoginPage() {
                     </button>
                   </div>
                   {needsSetup && (
-                    <p className="text-xs text-muted-foreground">Use at least 8 characters.</p>
+                    <p className="text-xs text-muted-foreground">Use 12–128 characters.</p>
                   )}
                 </div>
 
