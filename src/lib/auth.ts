@@ -105,10 +105,21 @@ export async function createUser(email: string, password: string): Promise<Sessi
   return { email: e };
 }
 
+// Precomputed bcrypt hash used to equalize response time for unknown emails.
+// Without it, verifyUser() returns early for a nonexistent account (no bcrypt
+// compare) but does ~100ms of work for a real one — a classic user-enumeration
+// timing oracle.
+const DUMMY_HASH = "$2b$10$C6UzMDM.H6dfI/f/IKcEeO7ZDk1Gz1z1z1z1z1z1z1z1z1z1z1z1W";
+
 export async function verifyUser(email: string, password: string): Promise<SessionUser | null> {
   const e = email.trim().toLowerCase();
-  const rec = await get<UserRecord>("SELECT email, password_hash AS passwordHash, created_at AS createdAt FROM users WHERE email = ?", [e]);
-  if (!rec) return null;
-  if (!(await bcrypt.compare(password, rec.passwordHash))) return null;
+  const rec = await get<UserRecord>(
+    "SELECT email, password_hash AS passwordHash, created_at AS createdAt, session_version AS sessionVersion FROM users WHERE email = ?",
+    [e]
+  );
+  // Always run a bcrypt compare, against the real hash when the user exists or
+  // the dummy otherwise, so the timing signal is identical either way.
+  const ok = await bcrypt.compare(password, rec?.passwordHash ?? DUMMY_HASH);
+  if (!rec || !ok) return null;
   return { email: rec.email };
 }
