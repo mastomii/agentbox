@@ -129,7 +129,10 @@ export default {
         for (let i = 0; i < parsed.attachments.length; i++) {
           const att = parsed.attachments[i];
           const attId = crypto.randomUUID();
-          const r2Key = id + "/" + i + "_" + (att.filename || "attachment");
+          // finding 2: the R2 key is <messageId>/<attachmentId> — random UUIDs
+          // only. The sender-controlled filename never becomes part of the
+          // storage key; it is preserved raw as D1 metadata (finding 5).
+          const r2Key = id + "/" + attId;
           try {
             // Convert base64 string to bytes for R2
             let bytes;
