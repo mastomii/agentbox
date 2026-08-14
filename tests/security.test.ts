@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { clientKey, isStrongPassword, normalizeEmail } from "../src/lib/security.ts";
+import { RateLimitWindow } from "../src/lib/rate-limit-window.ts";
 
 test("normalizeEmail canonicalizes valid setup addresses", () => {
   assert.equal(normalizeEmail("  Admin@Example.COM "), "admin@example.com");
@@ -30,4 +31,13 @@ test("clientKey ignores spoofable forwarded-for headers", () => {
     headers: { "cf-connecting-ip": "203.0.113.10", "x-forwarded-for": "spoofed" },
   });
   assert.equal(clientKey(cloudflare), "203.0.113.10");
+});
+
+test("RateLimitWindow blocks only after the configured failures", () => {
+  const limiter = new RateLimitWindow(2, 60_000);
+  assert.equal(limiter.consume("account"), false);
+  assert.equal(limiter.consume("account"), false);
+  assert.equal(limiter.consume("account"), true);
+  limiter.clear("account");
+  assert.equal(limiter.consume("account"), false);
 });

@@ -1,37 +1,37 @@
 import { NextResponse } from "next/server";
 import { createSession, verifyUser } from "@/lib/auth";
+import { clientKey, normalizeEmail } from "@/lib/security";
+import { clearRateLimit, isRateLimited, recordRateLimitFailure } from "@/lib/rate-limit";
 
-// ponytail: per-process sliding window, fine for a single-instance deploy.
-// Swap for a shared store if you ever run multiple replicas.
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 60_000;
-const attempts = new Map<string, { count: number; resetAt: number }>();
-
-function rateLimited(key: string): boolean {
-  const now = Date.now();
-  const rec = attempts.get(key);
-  if (!rec || now > rec.resetAt) {
-    attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
-    return false;
-  }
-  rec.count++;
-  return rec.count > MAX_ATTEMPTS;
-}
 
 export async function POST(req: Request) {
-  const ip =
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-    req.headers.get("x-real-ip") ||
-    "unknown";
-  if (rateLimited(ip)) {
-    return NextResponse.json({ error: "Too many attempts. Try again shortly." }, { status: 429 });
+  const body = await req.json().catch(() => null);
+  const email = normalizeEmail(body?.email);
+  const password = typeof body?.password === "string" ? body.password : "";
+  if (!email || !password) {
+    return NextResponse.json({ error: "Email and password required" }, { status: 400 });
   }
-  const { email, password } = await req.json();
+
+  const keys = [`login:ip:${clientKey(req)}`, `login:email:${email}`];
+  if (
+    (await isRateLimited(keys[0], MAX_ATTEMPTS, WINDOW_MS)) ||
+    (await isRateLimited(keys[1], MAX_ATTEMPTS, WINDOW_MS))
+  ) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(WINDOW_MS / 1000) } }
+    );
+  }
+
   const user = await verifyUser(email, password);
   if (!user) {
+    await Promise.all(keys.map((key) => recordRateLimitFailure(key, MAX_ATTEMPTS, WINDOW_MS)));
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
-  attempts.delete(ip);
+
+  await Promise.all(keys.map((key) => clearRateLimit(key)));
   await createSession(user);
   return NextResponse.json({ ok: true });
 }

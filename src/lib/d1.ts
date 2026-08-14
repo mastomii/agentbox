@@ -177,6 +177,11 @@ CREATE TABLE IF NOT EXISTS attachments (
   r2_key      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key TEXT PRIMARY KEY,
+  window_started INTEGER NOT NULL,
+  count INTEGER NOT NULL
+);
 `;
 
 // Apply the schema (idempotent). D1's query endpoint runs one statement at a
