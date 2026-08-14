@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { clientKey, isStrongPassword, normalizeEmail } from "../src/lib/security.ts";
 import { RateLimitWindow } from "../src/lib/rate-limit-window.ts";
+import { POST as setupPost, _deps } from "../src/app/api/auth/setup/route.ts";
 
 test("normalizeEmail canonicalizes valid setup addresses", () => {
   assert.equal(normalizeEmail("  Admin@Example.COM "), "admin@example.com");
@@ -40,4 +41,47 @@ test("RateLimitWindow blocks only after the configured failures", () => {
   assert.equal(limiter.consume("account"), true);
   limiter.clear("account");
   assert.equal(limiter.consume("account"), false);
+});
+
+test("setup route records rate-limit failures only on failure and clears on success", async (t) => {
+  const recorded: string[] = [];
+  const cleared: string[] = [];
+  const originals = { ..._deps };
+
+  t.after(() => Object.assign(_deps, originals));
+  Object.assign(_deps, {
+    isRateLimited: async () => false,
+    recordRateLimitFailure: async (key: string) => {
+      recorded.push(key);
+    },
+    clearRateLimit: async (key: string) => {
+      cleared.push(key);
+    },
+    hasAnyUser: async () => false,
+    createUser: async (email: string) => ({ email }),
+    createSession: async () => {},
+    hasToken: () => true,
+    ensureDatabaseId: async () => "db",
+    migrate: async () => {},
+  });
+
+  const request = (body: unknown) =>
+    new Request("https://example.test/api/auth/setup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const valid = { email: "admin@example.com", password: "correct horse battery staple" };
+
+  // A failed attempt consumes part of the failure budget...
+  const failed = await setupPost(request({ email: "admin@example.com", password: "short" }));
+  assert.equal(failed.status, 400);
+  assert.deepEqual(recorded, ["setup:ip:unknown"]);
+  assert.deepEqual(cleared, []);
+
+  // ...but a successful setup must not consume the budget and resets the limiter.
+  const succeeded = await setupPost(request(valid));
+  assert.equal(succeeded.status, 200);
+  assert.deepEqual(recorded, ["setup:ip:unknown"]);
+  assert.deepEqual(cleared, ["setup:ip:unknown"]);
 });

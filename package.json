@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test tests/security.test.mts"
+    "test": "node --experimental-strip-types --import ./tests/register-alias-loader.mjs --test tests/security.test.mts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
